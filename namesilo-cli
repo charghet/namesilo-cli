@@ -1,0 +1,115 @@
+#!/bin/env python3
+
+version = '1.0.0'
+
+import argparse
+import os
+import subprocess
+import sys
+
+try:
+    import namesilo
+except ImportError:
+    user_input = input("The 'namesilo' python package is not installed.\nWould you like to install it? (y/n): ").strip().lower()
+    
+    if user_input == 'y':
+        print("Installing 'namesilo' package...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "namesilo"])
+        import namesilo
+    else:
+        print("Installation aborted. 'namesilo' package was not installed.")
+        sys.exit(1)
+
+domain = ''
+ns = None
+
+parser = argparse.ArgumentParser(description=f"namesilo dns tool.\nversion {version}")
+
+parser.add_argument('-k', '--key', type=str, help='namesilo api key. default to use NAMESILO_KEY')
+parser.add_argument('-D', '--domain', type=str, help='domain. default to use NAMESILO_DOMAIN')
+parser.add_argument('-l', '--list', action='store_true', help='list dns record.')
+parser.add_argument('-a', '--add', type=str, nargs=2, metavar=('host_prefix', 'value'), help='add a dns record.')
+parser.add_argument('-u', '--update', type=str, nargs=3, metavar=('host_prefix', 'value', 'record_id'), help='update a dns record.')
+parser.add_argument('-t', '--type', type=str, default='A', help='set dns type, default is A. type: A AAAA CNAME MX TXT SRV CAA')
+parser.add_argument('-ttl', '--ttl', type=str, default='7200', help='set dns ttl, default is 7200')
+parser.add_argument('-d', '--delete', type=str, nargs=1, metavar=('record_id'), help='delete a dns record.')
+parser.add_argument('-v', '--version', action='store_true', help='print version and exit.')
+
+args = parser.parse_args()
+
+def ite_record(record, li:list):
+  if isinstance(record, list):
+    for item in record:
+      ite_record(item, li)
+  else:
+    li.append(record)
+
+def print_dns_record(record):
+  print(f"{record['type']:>5} {record['host']:>30} {record['value']:<15} {record['ttl']:<4} {record['record_id']}")
+
+def check():
+  global domain, ns
+
+  namesilo_key = ''
+  env_key = os.getenv('NAMESILO_KEY')
+  if args.key:
+    namesilo_key = args.key
+  elif env_key is not None:
+    namesilo_key = env_key
+  else:
+    print('please use -k to set namesilo api key or set environment variable NAMESILO_KEY !')
+    exit(1)
+  ns = namesilo.NameSilo(namesilo_key, live=True)
+
+  env_domain = os.getenv('NAMESILO_DOMAIN')
+  if args.domain:
+    domain = args.domain
+  elif env_domain is not None:
+    domain = env_domain
+  else:
+    print('please use -D to set domain or set environment variable NAMESILO_DOMAIN !')
+    exit(1)
+
+try:
+  if args.list:
+    check()
+    r = ns.list_dns_records(domain=domain, version='1')
+    print(f"{'type':>5} {'host':>30} {'value':<15} {'ttl':<4} {'record_id'}")
+    li = []
+    for record in r['resource_record']:
+      ite_record(record, li)
+    for record in li:
+      print_dns_record(record)
+  elif args.add:
+    check()
+    rrtype = args.type
+    rrhost = args.add[0]
+    rrvalue = args.add[1]
+    rrttl = args.ttl
+    r = ns.add_dns_record(domain=domain, rrtype=rrtype, rrhost=rrhost, rrvalue=rrvalue, rrttl=rrttl)
+    print(r)
+  elif args.update:
+    check()
+    rrtype = args.type
+    rrhost = args.update[0]
+    rrvalue = args.update[1]
+    rrid = args.update[2]
+    rrttl = args.ttl
+    r = ns.update_dns_record(domain=domain, rrid=rrid, rrhost=rrhost, rrvalue=rrvalue, rrttl=rrttl)
+    print(r)
+  elif args.delete:
+    check()
+    rrid = args.delete[0]
+    r = ns.delete_dns_record(version='1', domain=domain, rrid=rrid)
+    print(r)
+  elif args.version:
+    print(version)
+    exit(0)
+  else:
+    parser.print_help()
+except Exception as e:
+  print(e)
+  exit(1)
+
+
+
